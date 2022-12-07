@@ -1,0 +1,248 @@
+---
+title: "CONCRETE PREDICTION"
+author: "Tafia Alifianty Dinita Putri"
+date: "28/3/2022"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    highlight: zenburn
+    theme: cosmo
+---
+
+<style> body {text-align: justify} </style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.align = "center", fig.dim = c(7,7), message=FALSE, warning=FALSE)
+```
+
+## Import Library
+
+```{r}
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(knitr)
+library(gridExtra)
+library(e1071)
+```
+
+## Import Dataset
+
+```{r}
+df_train <- read.csv("data/data-train.csv")
+df_test <- read.csv("data/data-test.csv")
+kable(head(df_train))
+```
+
+## Data Preprocessing
+
+### Check data types
+
+```{r}
+str(df_train)
+```
+
+**Interpretation**
+
+Based on the output above, there are no columns with the wrong data type so no changes are needed. 
+
+### Check missing value
+
+```{r}
+kable(colSums(is.na(df_train)), 
+      col.names = c("Amount of Missing Value"))
+```
+
+**Interpretation**
+
+It can be seen from the data above that for this dataset there is no missing value.
+
+### Check Duplicate Values
+
+```{r}
+df_train[duplicated(df_train),]
+```
+
+**Interpretation**
+
+Based on the results above, it can be seen that there are no duplicate values in the dataset
+
+### Check Outlier Values
+
+```{r}
+train <- df_train %>% 
+  select(-id) %>% 
+  pivot_longer(everything(), names_to = "indicator", values_to = "value")
+
+ggplot(train, aes(value)) +
+  geom_boxplot() +
+  facet_wrap(~indicator)
+```
+
+**Interpretation**
+
+Based on the output above, there are outlier values in the `agg`, `fine_agg`, `strength`, `superplast`, and `water` columns.
+
+## Data Preprocess and EDA
+
+### Demonstrate and explain how to apply some data preprocessing to make sure that your data is “ready”, such as handling outlier.
+
+Here, I carried out 4 stages of data pre-processing, which included checking data types, checking for missing values, duplicate values, and also outlier values. Based on the results, it is found that all data types are correct and there are no missing values and duplicate values, but there are some outliers that we will later transform / normalize.
+
+### Explore the relation between the target and the features
+
+```{r}
+sc1 <- ggplot(df_train,
+             aes(x = strength, y = age))+
+  geom_point() +
+  labs(title = '',
+       x = 'Strength',
+       y = 'Age')
+
+sc2 <- ggplot(df_train,
+             aes(x = strength, y = cement))+
+  geom_point() +
+  labs(title = '',
+       x = 'Strength',
+       y = 'Cement')
+
+sc3 <- ggplot(df_train,
+             aes(x = super_plast, y = strength))+
+  geom_point() +
+  labs(title = '',
+       x = 'Super Plast',
+       y = 'Strength')
+
+grid.arrange(sc1,sc2,sc3,nrow = 1)
+```
+
+**Interpretation**
+
+Based on the graph above, it can be seen that the variables `age` with `strength` and `super_plast` with `strength` do not have a strong correlation, while the variables `strength` with `cement` have a fairly strong linear correlation.
+
+## Model Fitting and Evaluation
+
+### Demonstrate how to prepare cross-validation data for this case.
+
+In this case, the proportion for training data and test data is 80 to 20.
+
+### Demonstrate how to properly do model fitting and evaluation
+
+In this case, the model that will be used is multiple linear regression which will be evaluated with several metrics such as R-Square, MAE, MSE, and so on. In addition, to prevent the model from being overfitted, the dataset will be split into training data and test data.
+
+```{r}
+df_train <- subset(df_train, select = -c(id))
+df_test <- subset(df_test, select = -c(id))
+kable(head(df_train))
+```
+
+```{r}
+split <- round(nrow(df_train)*0.80)
+train <- df_train[1:split, ]
+test <- df_train[(split + 1):nrow(df_train), ]
+model <- lm(strength ~ ., data = train)
+summary(model)
+```
+
+```{r}
+p <- predict(model, newdata = test)
+error <- df_train$strength - p
+RMSE <- sqrt(mean(error^2))
+print(paste("Nilai RMSE : ", RMSE))
+```
+
+
+### Compare multiple data preprocess approach.
+
+Based on the results of the previous outliers, it is deemed necessary to transform using MinMaxScaler.
+
+```{r}
+normalize <- function(x, na.rm = TRUE) {
+    return((x- min(x)) /(max(x)-min(x)))
+}
+```
+
+```{r}
+train$cement <- normalize(train$cement)
+train$slag <- normalize(train$slag)
+train$flyash <- normalize(train$flyash)
+train$water <- normalize(train$water)
+train$super_plast <- normalize(train$super_plast)
+train$coarse_agg <- normalize(train$coarse_agg)
+train$fine_agg <- normalize(train$fine_agg)
+train$age <- normalize(train$age)
+```
+
+### Compare multiple model
+
+In this case, the 2 models to be used are multiple linear regression and SVR.
+
+```{r}
+model_lm <- lm(strength ~ ., data = train)
+
+p <- predict(model_lm, newdata = test)
+error <- df_train$strength - p
+RMSE <- sqrt(mean(error^2))
+print(paste("Nilai RMSE : ", RMSE))
+```
+
+```{r}
+model_svr <- svm(strength ~ ., data = train)
+
+p <- predict(model_svr, newdata = test)
+error <- df_train$strength - p
+RMSE <- sqrt(mean(error^2))
+print(paste("Nilai RMSE : ", RMSE))
+```
+
+**Interpretation**
+
+In this case, the SVR model is much better when viewed from the RMSE value so that in the future we will use this SVR model.
+
+## Prediction Performance
+
+### MAE
+
+```{r}
+p <- predict(model_svr, newdata = test)
+error <- df_train$strength - p
+MAE <- mean(abs(error^2))
+print(paste("Nilai MAE : ", MAE))
+```
+
+### R-Squared
+
+```{r}
+p <- predict(model_svr, newdata = test)
+error <- (p - mean(df_train$strength))^2
+SSR <- sum(error)
+RSQ <- 1 - SSR
+print(paste("Nilai R-Square : ", RSQ))
+```
+
+## Interpretation
+
+The process of scaling to the initial data does not need to be done because it will affect the model that has been created. If you want to do analysis and interpretation, you can use initial data that has not been scaled.
+
+The regression model with linear regression with SVR uses 8 features and the results are quite good.
+
+## Conclusion
+
+The purpose of the research has indeed arrived, but there is still a need for improvement so that the resulting analysis will be much better in the future. In addition, with the linear regression model and SVR, the performance is still not very good so it needs further evaluation.
+
+## Submission
+
+```{r}
+# predict target using your model
+pred_test <- predict(model_svr, df_test)
+
+# Create submission data
+submission <- data.frame(id = df_test$id,
+                         strength = pred_test
+                         )
+
+# save data
+write.csv(submission, "submission-file.csv", row.names = F)
+```
+
